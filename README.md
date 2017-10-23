@@ -26,7 +26,7 @@ This wouldn't have been possible without the hints contained in the awesome [htt
 - to allow more reversing of the game (in the hope to ease the burden of re-writing its engine in the open sources in the future)
 - to enable full mods
 
-## What you can do
+## What you can do
 
 - read the contents of the ggpack files
 	- browse all files into the ggpack
