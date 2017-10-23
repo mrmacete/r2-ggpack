@@ -17,7 +17,7 @@ install: all
 	$(SUDO) cp -f *.$(EXT_SO) $(R2_PLUGIN_PATH)
 
 uninstall:
-	for a in *.$(EXT_SO) ; do rm -f $(R2_PLUGIN_PATH)/$$a ; done
+	for a in *.$(EXT_SO) ; do $(SUDO) rm -f $(R2_PLUGIN_PATH)/$$a ; done
 
 clean:
 	rm -f *.$(EXT_SO)
