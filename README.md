@@ -50,6 +50,12 @@ This wouldn't have been possible without the hints contained in the awesome [htt
 Make sure you have [radare2 from git](https://github.com/radare/radare2) before compiling, then just do:
 
 ```
+r2pm -i ggpack
+```
+
+or compile it by hand:
+
+```
 git clone https://github.com/mrmacete/r2-ggpack.git
 cd r2-ggpack
 make install
