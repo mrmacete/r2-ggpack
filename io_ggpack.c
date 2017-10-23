@@ -34,7 +34,7 @@ extern RIOPlugin r_io_plugin_ggpack;
  * result to this list.
  */
 
- static const ut8 magic_bytes[BRUTE_VERSIONS][16] = {
+static const ut8 magic_bytes[BRUTE_VERSIONS][16] = {
 	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x5b, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93 },
 	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x56, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93 },
 };
@@ -373,6 +373,10 @@ static int r_io_ggpack_read_entry(RIOGGPack *rg, ut32 read_start, ut8 *buf, int 
 	if (entry->is_obfuscated) {
 		if (read_start > entry_start) {
 			ut8 * dbuf = malloc (real_count+1);
+			if (!dbuf) {
+				return 0;
+			}
+
 			if (!prev_obfuscated || *prev_obfuscated == -1) {
 				fseek (rg->file, read_start-1 + start_gap, SEEK_SET);
 				fread (dbuf, 1, real_count+1, rg->file);
@@ -426,6 +430,10 @@ static int r_io_ggpack_write_entry(RIOGGPack *rg, ut32 write_start, const ut8 *b
 	if (entry->is_obfuscated) {
 		if (write_start > entry_start) {
 			dbuf = malloc(real_count + 1 + rest_size);
+			if (!dbuf) {
+				return 0;
+			}
+
 			wbuf = dbuf + 1;
 
 			if (!prev_obfuscated || *prev_obfuscated == -1) {
@@ -444,6 +452,10 @@ static int r_io_ggpack_write_entry(RIOGGPack *rg, ut32 write_start, const ut8 *b
 			gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start + start_gap, real_count + 1 + rest_size);
 		} else {
 			wbuf = dbuf = malloc(real_count + rest_size);
+			if (!dbuf) {
+				return 0;
+			}
+
 			memcpy (dbuf, buf + start_gap, real_count);
 
 			if (rest_size > 0) {
@@ -518,6 +530,10 @@ static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 d
 			}
 
 			ut8 * buf = malloc (size);
+			if (!buf) {
+				return false;
+			}
+
 			__read_internal (rg, offset, buf, size, saved_last_byte);
 
 			fseek (rg->file, offset + size - 1, SEEK_SET);
@@ -530,7 +546,7 @@ static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 d
 			r_io_ggpack_write_entry (rg, offset, buf, size, rg->index->entries[j], &saved_last_byte);
 			R_FREE (buf);
 
-            saved_last_byte = x;
+			saved_last_byte = x;
 		}
 	} else {
 		eprintf ("resizing down by %u bytes...\n", (ut32) -delta);
@@ -552,6 +568,10 @@ static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 d
 			}
 
 			ut8 * buf = malloc (size);
+			if (!buf) {
+				return false;
+			}
+
 			__read_internal (rg, offset, buf, size, -1);
 
 			rg->index->entries[j]->offset = offset;
@@ -910,6 +930,9 @@ static RGGPackIndex * r_ggpack_index_new(RList * entry_list) {
 	}
 
 	index->entries = (RGGPackIndexEntry **) malloc (length * sizeof (void *));
+	if (!index->entries) {
+		goto error;
+	}
 
 	r_list_foreach (entry_list, iter, entry) {
 		bool is_valid = !entry->is_obfuscated || (entry->offset != 0 /*&& entry->size != 0*/);

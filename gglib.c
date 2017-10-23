@@ -111,6 +111,10 @@ GGHashValue *gg_hash_unserialize(const ut8* in_buf, ut32 buf_size) {
 	}
 
 	ut32 * plo = malloc (plo_length * 4);
+	if (!plo) {
+		return NULL;
+	}
+
 	int i;
 	for (i = 0; i < plo_length; i++) {
 		ut32 plo_element = r_read_le32 (in_buf + plo_offset + i*4);
@@ -279,7 +283,17 @@ static bool gg_string_table_uniq(GGSerializationContext * ctx) {
 	}
 
 	ctx->string_table_array = malloc (length * sizeof(void *));
+	if (!ctx->string_table_array) {
+		return false;
+	}
+
 	ctx->string_table_offsets = malloc (length * sizeof(ut32));
+	if (!ctx->string_table_offsets) {
+		R_FREE (ctx->string_table_array);
+		ctx->string_table_array = NULL;
+		return false;
+	}
+
 	ctx->string_table_length = length;
 
 	int i = 0;
