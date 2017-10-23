@@ -488,11 +488,6 @@ static bool r_io_ggpack_resize_entry(RIOGGPack *rg, RIO *io, RIODesc * fd, st64 
 	return result;
 }
 
-typedef struct {
-	ut32 offset;
-	ut8 saved_byte;
-} RGGSavedByte;
-
 static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 delta) {
 	RGGPackIndexEntry * entry = rg->index->entries[i];
 
@@ -503,9 +498,9 @@ static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 d
 
 	int j;
 	if (delta >= 0) {
-		RList * saved_bytes = r_list_newf (free);
 		eprintf ("resizing and shifting up by %u bytes...\n", (ut32) delta);
 		j = i;
+		st32 saved_last_byte = -1;
 		for (; j < rg->index->length; j++) {
 			ut32 size = rg->index->entries[j]->size;
 			ut32 offset = rg->index->entries[j]->offset;
@@ -523,34 +518,20 @@ static bool r_ggpack_index_resize_entry_at(RIOGGPack *rg, int i, ut64 at, st64 d
 			}
 
 			ut8 * buf = malloc (size);
-			st32 saved_last_byte = -1;
-			RGGSavedByte * sb = r_list_first (saved_bytes);
-			if (sb && sb->offset == offset) {
-				saved_last_byte = sb->saved_byte;
-				sb = r_list_pop_head (saved_bytes);
-				R_FREE (sb);
-			}
-
 			__read_internal (rg, offset, buf, size, saved_last_byte);
 
 			fseek (rg->file, offset + size - 1, SEEK_SET);
 			ut8 x;
 			fread (&x, 1, 1, rg->file);
 
-			sb = R_NEW0 (RGGSavedByte);
-			sb->offset = offset + size;
-			sb->saved_byte = x;
-			r_list_append (saved_bytes, sb);
-
 			rg->index->entries[j]->offset = offset;
 			rg->index->entries[j]->size = size;
 
 			r_io_ggpack_write_entry (rg, offset, buf, size, rg->index->entries[j], &saved_last_byte);
 			R_FREE (buf);
+
+            saved_last_byte = x;
 		}
-
-		r_list_free (saved_bytes);
-
 	} else {
 		eprintf ("resizing down by %u bytes...\n", (ut32) -delta);
 		j = rg->index->length - 1;
