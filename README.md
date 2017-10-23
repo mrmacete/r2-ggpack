@@ -43,7 +43,7 @@ This wouldn't have been possible without the hints contained in the awesome [htt
 	- index directory management
 
 - a shallow **RBin** plugin just puts a flag for each packed file
-- a dumb python test suite exists to ensure a minimum level of internal coherence
+- a dumb python test suite exists to ensure a minimum level of internal consistency
 
 ## Installing
 
