@@ -30,7 +30,7 @@ extern RIOPlugin r_io_plugin_ggpack;
  *
  * If there's no result, just try to enlarge the ".." mask.
  *
- * Once found, you can just "pC@hit0_0" (or whatever your hit is) and add the
+ * Once found, you can just "pc 16@hit0_0" (or whatever your hit is) and add the
  * result to this list.
  */
 
@@ -46,6 +46,10 @@ static const ut8 magic_bytes[BRUTE_VERSIONS][16] = {
 
 static int __read_internal(RIOGGPack * rg, ut32 read_start, ut8 * buf, int count, st32 prev_obfuscated);
 static int __write_internal(RIOGGPack * rg, ut32 write_start, const ut8 *buf, int count, st32 prev_obfuscated);
+
+static char *__fs_io_open(RIOGGPack *rg, const char * path);
+static char *__fs_io_read(RIOGGPack *rg, const char * path);
+static char *__fs_io_dir(RIOGGPack *rg, const char * path);
 
 static int r_io_ggpack_read_entry(RIOGGPack *rg, ut32 read_start, ut8 *buf, int count, RGGPackIndexEntry * entry, st32 *prev_obfuscated);
 static int r_io_ggpack_write_entry(RIOGGPack *rg, ut32 write_start, const ut8 *buf, int count, RGGPackIndexEntry * entry, st32 *prev_obfuscated);
@@ -78,6 +82,7 @@ static void r_ggpack_rebuild_index(RIOGGPack * rg);
 
 static int entries_sort_func(const void *a, const void *b);
 static ut32 fread_le32(FILE *f);
+static const char *r_ggpack_base_name(const char * path);
 
 static RIOGGPack *r_io_ggpack_new(void) {
 	RIOGGPack *rg = R_NEW0 (RIOGGPack);
@@ -303,7 +308,95 @@ static char* __system(RIO *io, RIODesc *fd, const char *command) {
 		return NULL;
 	}
 
+	// fs.io support:
+	if (!strncmp (command, "m ", 2)) {
+		return __fs_io_open (rg, command + 2);
+	}
+
+	if (!strncmp (command, "mg ", 3)) {
+		return __fs_io_read (rg, command + 3);
+	}
+
+	if (!strncmp (command, "md ", 3)) {
+		return __fs_io_dir (rg, command + 3);
+	}
+
 	return NULL;
+}
+
+static char *__fs_io_open(RIOGGPack *rg,  const char * path) {
+	const char * base_name = r_ggpack_base_name (path);
+	int i;
+	for (i = 0; i < rg->index->length; i++) {
+		RGGPackIndexEntry * entry = rg->index->entries[i];
+		if (!strcmp (entry->file_name, base_name)) {
+			return r_str_newf ("%u", entry->size);
+		}
+	}
+	return NULL;
+}
+
+static char *__fs_io_read(RIOGGPack *rg, const char * path) {
+	const char * base_name = r_ggpack_base_name (path);
+	int i;
+	for (i = 0; i < rg->index->length; i++) {
+		RGGPackIndexEntry * entry = rg->index->entries[i];
+		if (!strcmp (entry->file_name, base_name)) {
+			ut8 * buf = malloc (entry->size);
+			if (!buf) {
+				return NULL;
+			}
+
+			int real_count;
+			if ((real_count = r_io_ggpack_read_entry (rg, entry->offset, buf, entry->size, entry, NULL)) != entry->size) {
+				eprintf ("Error reading %s\n", base_name);
+				R_FREE (buf);
+				return NULL;
+			}
+
+			char * hex_encoded = malloc (entry->size * 2);
+			if (!hex_encoded) {
+				R_FREE (buf);
+				return NULL;
+			}
+
+			r_hex_bin2str (buf, entry->size, hex_encoded);
+			R_FREE (buf);
+
+			return hex_encoded;
+		}
+	}
+	return NULL;
+}
+
+static char *__fs_io_dir(RIOGGPack *rg, const char * path) {
+	char * result = NULL;
+
+	if (!strcmp (path, "/")) {
+		int i;
+		for (i = 1; i < rg->index->length - 1; i++) {
+			RGGPackIndexEntry * entry = rg->index->entries[i];
+			if (!result) {
+				result = r_str_newf ("f %s\n", entry->file_name);
+			} else {
+				r_str_appendf (result, "f %s\n", entry->file_name);
+			}
+		}
+	}
+
+	return result;
+}
+
+static const char *r_ggpack_base_name(const char * path) {
+	if (!path || !*path) {
+		return NULL;
+	}
+	const char * sep;
+	if ((sep = strrchr (path, '/'))) {
+		return sep + 1;
+	} else {
+		return path;
+	}
 }
 
 static void r_ggpack_rebuild_index(RIOGGPack * rg) {
