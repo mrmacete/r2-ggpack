@@ -6,16 +6,16 @@
 #include <r_lib.h>
 #include "gglib.h"
 
-#define ENABLE_DEBUG 0
+#define ENABLE_DEBUG 1
 
 #if ENABLE_DEBUG
-	#define dbg_log(...) eprintf(__VA_ARGS__)
+#define dbg_log(...) eprintf (__VA_ARGS__)
 #else
-	#define dbg_log(...)
+#define dbg_log(...)
 #endif
 
 typedef struct {
-	ut32 * plo;
+	ut32 *plo;
 	ut32 plo_length;
 
 	const ut8 *buf;
@@ -24,62 +24,62 @@ typedef struct {
 } GGParseContext;
 
 typedef struct {
-	RList * chunks;
+	RList *chunks;
 	ut32 chunks_size;
-	RList * string_table;
-	char ** string_table_array;
-	ut32 * string_table_offsets;
+	RList *string_table;
+	char **string_table_array;
+	ut32 *string_table_offsets;
 	ut32 string_table_length;
 	ut32 string_table_size;
-	RList * tmp_strings;
-	RList * plo;
+	RList *tmp_strings;
+	RList *plo;
 } GGSerializationContext;
 
 typedef struct {
-	ut8 * data;
+	ut8 *data;
 	ut32 size;
 } GGChunk;
 
 static GGHashValue *gg_hash_carve(GGParseContext *ctx);
 static GGValue *gg_value_carve(GGParseContext *ctx);
 
-static void gg_hash_create_string_table(GGSerializationContext * ctx, GGHashValue * hash);
-static void gg_array_create_string_table(GGSerializationContext * ctx, GGArrayValue * array);
-static void gg_value_create_string_table(GGSerializationContext * ctx, GGValue * value);
+static void gg_hash_create_string_table(GGSerializationContext *ctx, GGHashValue *hash);
+static void gg_array_create_string_table(GGSerializationContext *ctx, GGArrayValue *array);
+static void gg_value_create_string_table(GGSerializationContext *ctx, GGValue *value);
 
-static bool gg_hash_create_chunks(GGSerializationContext * ctx, GGHashValue * hash);
-static bool gg_array_create_chunks(GGSerializationContext * ctx, GGArrayValue * array);
-static bool gg_value_create_chunks(GGSerializationContext * ctx, GGValue * value);
-static bool gg_string_create_chunks(GGSerializationContext * ctx, GGStringValue * value);
-static bool gg_int_create_chunks(GGSerializationContext * ctx, GGIntValue * value);
+static bool gg_hash_create_chunks(GGSerializationContext *ctx, GGHashValue *hash);
+static bool gg_array_create_chunks(GGSerializationContext *ctx, GGArrayValue *array);
+static bool gg_value_create_chunks(GGSerializationContext *ctx, GGValue *value);
+static bool gg_string_create_chunks(GGSerializationContext *ctx, GGStringValue *value);
+static bool gg_int_create_chunks(GGSerializationContext *ctx, GGIntValue *value);
 
-static char * gg_get_tmp_string(GGSerializationContext * ctx, ut32 value);
-static bool gg_string_table_uniq(GGSerializationContext * ctx);
-static int gg_search_string_table(GGSerializationContext * ctx, const char * string);
+static char *gg_get_tmp_string(GGSerializationContext *ctx, ut32 value);
+static bool gg_string_table_uniq(GGSerializationContext *ctx);
+static int gg_search_string_table(GGSerializationContext *ctx, const char *string);
 
-static void gg_serialization_context_free(GGSerializationContext * ctx);
-static void gg_serlization_context_render(GGSerializationContext * ctx, ut8 * buffer);
+static void gg_serialization_context_free(GGSerializationContext *ctx);
+static void gg_serlization_context_render(GGSerializationContext *ctx, ut8 *buffer);
 
-static const char * gg_get_plo_string(GGParseContext * ctx, ut32 plo_idx);
-static st64 gg_plo_add_string(GGSerializationContext * ctx, const char * string);
-static void gg_plo_add_offset(GGSerializationContext * ctx, ut32 offset);
+static const char *gg_get_plo_string(GGParseContext *ctx, ut32 plo_idx);
+static st64 gg_plo_add_string(GGSerializationContext *ctx, const char *string);
+static void gg_plo_add_offset(GGSerializationContext *ctx, ut32 offset);
 
 static GGChunk *gg_chunk_new(ut32 len);
-static void gg_chunk_free(GGChunk * chunk);
-static void gg_chunks_add_chunk(GGSerializationContext * ctx, GGChunk *chunk);
+static void gg_chunk_free(GGChunk *chunk);
+static void gg_chunks_add_chunk(GGSerializationContext *ctx, GGChunk *chunk);
 
 #define CTX_CUR_BYTE(ctx) (ctx->buf[ctx->buf_cursor])
 #define CTX_CUR_UT32(ctx) (r_read_le32 (ctx->buf + ctx->buf_cursor))
 #define CTX_CUR_VALID(ctx) (ctx->buf_cursor < ctx->buf_size)
-#define CTX_CUR_ADVANCE(ctx, advance, fname)\
-	ctx->buf_cursor += (advance);\
-	if (!CTX_CUR_VALID (ctx)) {\
+#define CTX_CUR_ADVANCE(ctx, advance, fname)		\
+	ctx->buf_cursor += (advance);			\
+	if (!CTX_CUR_VALID (ctx)) {			\
 		dbg_log ("%s: parse out of range\n", fname);\
-		goto error;\
-	}\
+		goto error;				\
+	}						\
 
-GGHashValue *gg_hash_unserialize(const ut8* in_buf, ut32 buf_size) {
-	GGHashValue * result = NULL;
+GGHashValue *gg_hash_unserialize(const ut8 *in_buf, ut32 buf_size) {
+	GGHashValue *result = NULL;
 
 	ut32 signature = r_read_le32 (in_buf);
 	if (signature != 0x04030201) {
@@ -105,23 +105,25 @@ GGHashValue *gg_hash_unserialize(const ut8* in_buf, ut32 buf_size) {
 		plo_length++;
 	}
 
-	if ((plo_offset + (plo_length-1) * 4) >= buf_size) {
+	if ((plo_offset + (plo_length - 1) * 4) >= buf_size) {
 		dbg_log ("gg_hash_unserialize: corrupted plo\n");
 		return NULL;
 	}
 
-	ut32 * plo = malloc (plo_length * 4);
+	ut32 *plo = malloc (plo_length * 4);
 	if (!plo) {
 		return NULL;
 	}
 
 	int i;
 	for (i = 0; i < plo_length; i++) {
-		ut32 plo_element = r_read_le32 (in_buf + plo_offset + i*4);
+		ut32 plo_element = r_read_le32 (in_buf + plo_offset + i * 4);
 		plo[i] = plo_element;
 	}
 
-	GGParseContext context = { plo, plo_length, in_buf, buf_size, 12 };
+	GGParseContext context = {
+		plo, plo_length, in_buf, buf_size, 12
+	};
 
 	result = gg_hash_carve (&context);
 
@@ -133,7 +135,7 @@ cleanup:
 	return result;
 }
 
-bool gg_hash_serialize(GGHashValue * hash, ut8 ** out_buf, ut32 * out_buf_size) {
+bool gg_hash_serialize(GGHashValue *hash, ut8 **out_buf, ut32 *out_buf_size) {
 	if (!hash) {
 		*out_buf = NULL;
 		*out_buf_size = 0;
@@ -162,14 +164,14 @@ bool gg_hash_serialize(GGHashValue * hash, ut8 ** out_buf, ut32 * out_buf_size) 
 	}
 
 	ut32 string_table_offset = 12 + ctx.chunks_size +
-	                           1 + (r_list_length (ctx.plo) + 1) * 4 + 1;
+				   1 + (r_list_length (ctx.plo) + 1) * 4 + 1;
 
 	gg_plo_add_offset (&ctx, string_table_offset);
 
 	ut32 buf_size = string_table_offset +
-	                ctx.string_table_size;
+			ctx.string_table_size;
 
-	ut8 * buffer = calloc (1, buf_size);
+	ut8 *buffer = calloc (1, buf_size);
 	gg_serlization_context_render (&ctx, buffer);
 
 	*out_buf = buffer;
@@ -187,10 +189,10 @@ error:
 	return false;
 }
 
-static void gg_serlization_context_render(GGSerializationContext * ctx, ut8 * buffer) {
-	RListIter * iter;
-	GGChunk * chunk;
-	void * plo_entry;
+static void gg_serlization_context_render(GGSerializationContext *ctx, ut8 *buffer) {
+	RListIter *iter;
+	GGChunk *chunk;
+	void *plo_entry;
 	int i;
 
 	ut32 cursor = 0;
@@ -222,16 +224,16 @@ static void gg_serlization_context_render(GGSerializationContext * ctx, ut8 * bu
 	buffer[cursor++] = 0x08;
 
 	for (i = 0; i < ctx->string_table_length; i++) {
-		char * str = ctx->string_table_array[i];
+		char *str = ctx->string_table_array[i];
 		ut32 off = ctx->string_table_offsets[i];
 		strcpy ((char *) buffer + cursor + off, str);
 	}
 }
 
-static void gg_serialization_context_free(GGSerializationContext * ctx) {
-	RListIter * iter;
+static void gg_serialization_context_free(GGSerializationContext *ctx) {
+	RListIter *iter;
 	if (ctx->chunks) {
-		GGChunk * chunk;
+		GGChunk *chunk;
 		r_list_foreach (ctx->chunks, iter, chunk) {
 			gg_chunk_free (chunk);
 		}
@@ -255,7 +257,7 @@ static void gg_serialization_context_free(GGSerializationContext * ctx) {
 		ctx->string_table_offsets = NULL;
 	}
 	if (ctx->tmp_strings) {
-		char * string;
+		char *string;
 		r_list_foreach (ctx->tmp_strings, iter, string) {
 			R_FREE (string);
 		}
@@ -264,7 +266,7 @@ static void gg_serialization_context_free(GGSerializationContext * ctx) {
 	}
 }
 
-static bool gg_string_table_uniq(GGSerializationContext * ctx) {
+static bool gg_string_table_uniq(GGSerializationContext *ctx) {
 	RListIter *iter, *tmp;
 	char *string;
 
@@ -311,19 +313,19 @@ static bool gg_string_table_uniq(GGSerializationContext * ctx) {
 	return true;
 }
 
-static void gg_hash_create_string_table(GGSerializationContext * ctx, GGHashValue * hash) {
+static void gg_hash_create_string_table(GGSerializationContext *ctx, GGHashValue *hash) {
 	int i;
 	for (i = 0; i < hash->n_pairs; i++) {
-		GGHashPair * pair = hash->pairs[i];
+		GGHashPair *pair = hash->pairs[i];
 		r_list_append (ctx->string_table, (void *) pair->key);
 		gg_value_create_string_table (ctx, pair->value);
 	}
 }
 
-static void gg_array_create_string_table(GGSerializationContext * ctx, GGArrayValue * array) {
+static void gg_array_create_string_table(GGSerializationContext *ctx, GGArrayValue *array) {
 	int i;
 	for (i = 0; i < array->length; i++) {
-		GGValue * value = array->entries[i];
+		GGValue *value = array->entries[i];
 		if (!value) {
 			dbg_log ("array entry %d is NULL\n", i);
 			continue;
@@ -332,7 +334,7 @@ static void gg_array_create_string_table(GGSerializationContext * ctx, GGArrayVa
 	}
 }
 
-static void gg_value_create_string_table(GGSerializationContext * ctx, GGValue * value) {
+static void gg_value_create_string_table(GGSerializationContext *ctx, GGValue *value) {
 	switch (value->type) {
 	case GG_TYPE_HASH:
 		gg_hash_create_string_table (ctx, (GGHashValue *) value);
@@ -345,7 +347,7 @@ static void gg_value_create_string_table(GGSerializationContext * ctx, GGValue *
 		break;
 	case GG_TYPE_INT:
 	{
-		char * tmp_str = gg_get_tmp_string (ctx, ((GGIntValue *) value)->value);
+		char *tmp_str = gg_get_tmp_string (ctx, ((GGIntValue *) value)->value);
 		r_list_append (ctx->string_table, tmp_str);
 		break;
 	}
@@ -354,21 +356,21 @@ static void gg_value_create_string_table(GGSerializationContext * ctx, GGValue *
 	}
 }
 
-static bool gg_hash_create_chunks(GGSerializationContext * ctx, GGHashValue * hash) {
+static bool gg_hash_create_chunks(GGSerializationContext *ctx, GGHashValue *hash) {
 	int i;
 
-	GGChunk * hash_chunk = gg_chunk_new (5);
+	GGChunk *hash_chunk = gg_chunk_new (5);
 	hash_chunk->data[0] = GG_TYPE_HASH;
 	r_write_le32 (hash_chunk->data + 1, hash->n_pairs);
 	gg_chunks_add_chunk (ctx, hash_chunk);
 
 	for (i = 0; i < hash->n_pairs; i++) {
-		GGHashPair * pair = hash->pairs[i];
+		GGHashPair *pair = hash->pairs[i];
 		st64 plo_idx = gg_plo_add_string (ctx, pair->key);
 		if (plo_idx < 0) {
 			return false;
 		}
-		GGChunk * key_chunk = gg_chunk_new (4);
+		GGChunk *key_chunk = gg_chunk_new (4);
 		r_write_le32 (key_chunk->data, (ut32) plo_idx);
 		gg_chunks_add_chunk (ctx, key_chunk);
 
@@ -377,17 +379,17 @@ static bool gg_hash_create_chunks(GGSerializationContext * ctx, GGHashValue * ha
 		}
 	}
 
-	GGChunk * pad_chunk = gg_chunk_new (1);
+	GGChunk *pad_chunk = gg_chunk_new (1);
 	pad_chunk->data[0] = GG_TYPE_HASH;
 	gg_chunks_add_chunk (ctx, pad_chunk);
 
 	return true;
 }
 
-static bool gg_array_create_chunks(GGSerializationContext * ctx, GGArrayValue * array) {
+static bool gg_array_create_chunks(GGSerializationContext *ctx, GGArrayValue *array) {
 	int i;
 
-	GGChunk * array_chunk = gg_chunk_new (5);
+	GGChunk *array_chunk = gg_chunk_new (5);
 	array_chunk->data[0] = GG_TYPE_ARRAY;
 	r_write_le32 (array_chunk->data + 1, array->length);
 	gg_chunks_add_chunk (ctx, array_chunk);
@@ -398,14 +400,14 @@ static bool gg_array_create_chunks(GGSerializationContext * ctx, GGArrayValue * 
 		}
 	}
 
-	GGChunk * pad_chunk = gg_chunk_new (1);
+	GGChunk *pad_chunk = gg_chunk_new (1);
 	pad_chunk->data[0] = GG_TYPE_ARRAY;
 	gg_chunks_add_chunk (ctx, pad_chunk);
 
 	return true;
 }
 
-static bool gg_value_create_chunks(GGSerializationContext * ctx, GGValue * value) {
+static bool gg_value_create_chunks(GGSerializationContext *ctx, GGValue *value) {
 	switch (value->type) {
 	case GG_TYPE_HASH:
 		return gg_hash_create_chunks (ctx, (GGHashValue *) value);
@@ -421,8 +423,8 @@ static bool gg_value_create_chunks(GGSerializationContext * ctx, GGValue * value
 	return false;
 }
 
-static bool gg_string_create_chunks(GGSerializationContext * ctx, GGStringValue * value) {
-	GGChunk * str_chunk = gg_chunk_new (5);
+static bool gg_string_create_chunks(GGSerializationContext *ctx, GGStringValue *value) {
+	GGChunk *str_chunk = gg_chunk_new (5);
 	str_chunk->data[0] = GG_TYPE_STRING;
 	gg_chunks_add_chunk (ctx, str_chunk);
 
@@ -435,8 +437,8 @@ static bool gg_string_create_chunks(GGSerializationContext * ctx, GGStringValue 
 	return true;
 }
 
-static bool gg_int_create_chunks(GGSerializationContext * ctx, GGIntValue * value) {
-	GGChunk * int_chunk = gg_chunk_new (5);
+static bool gg_int_create_chunks(GGSerializationContext *ctx, GGIntValue *value) {
+	GGChunk *int_chunk = gg_chunk_new (5);
 	int_chunk->data[0] = GG_TYPE_INT;
 	gg_chunks_add_chunk (ctx, int_chunk);
 
@@ -452,15 +454,15 @@ static bool gg_int_create_chunks(GGSerializationContext * ctx, GGIntValue * valu
 }
 
 static GGChunk *gg_chunk_new(ut32 size) {
-	GGChunk * result = R_NEW0 (GGChunk);
+	GGChunk *result = R_NEW0 (GGChunk);
 
-	result->data = calloc (1, R_MAX(size, 16));
+	result->data = calloc (1, R_MAX (size, 16));
 	result->size = size;
 
 	return result;
 }
 
-static void gg_chunk_free(GGChunk * chunk) {
+static void gg_chunk_free(GGChunk *chunk) {
 	if (chunk == NULL) {
 		return;
 	}
@@ -473,12 +475,12 @@ static void gg_chunk_free(GGChunk * chunk) {
 	R_FREE (chunk);
 }
 
-static void gg_chunks_add_chunk(GGSerializationContext * ctx, GGChunk *chunk) {
+static void gg_chunks_add_chunk(GGSerializationContext *ctx, GGChunk *chunk) {
 	r_list_append (ctx->chunks, chunk);
 	ctx->chunks_size += chunk->size;
 }
 
-static st64 gg_plo_add_string(GGSerializationContext * ctx, const char * string) {
+static st64 gg_plo_add_string(GGSerializationContext *ctx, const char *string) {
 	st64 in_table = gg_search_string_table (ctx, string);
 	if (in_table < 0) {
 		return -1;
@@ -489,8 +491,8 @@ static st64 gg_plo_add_string(GGSerializationContext * ctx, const char * string)
 		st_offset = 0xfffffffe;
 	}
 
-	RListIter * iter;
-	void * plo_entry;
+	RListIter *iter;
+	void *plo_entry;
 	st64 in_plo = -1;
 	st64 i = 0;
 	r_list_foreach (ctx->plo, iter, plo_entry) {
@@ -509,9 +511,9 @@ static st64 gg_plo_add_string(GGSerializationContext * ctx, const char * string)
 	return in_plo;
 }
 
-static void gg_plo_add_offset(GGSerializationContext * ctx, ut32 offset) {
-	RListIter * iter;
-	void * plo_entry;
+static void gg_plo_add_offset(GGSerializationContext *ctx, ut32 offset) {
+	RListIter *iter;
+	void *plo_entry;
 	r_list_foreach (ctx->plo, iter, plo_entry) {
 		if ((ut32) plo_entry == 0xfffffffe) {
 			iter->data = (void *) (ut64) offset;
@@ -521,14 +523,14 @@ static void gg_plo_add_offset(GGSerializationContext * ctx, ut32 offset) {
 	}
 }
 
-static int gg_search_string_table(GGSerializationContext * ctx, const char * string) {
+static int gg_search_string_table(GGSerializationContext *ctx, const char *string) {
 	int imid;
 	int imin = 0;
 	int imax = ctx->string_table_length - 1;
 
 	while (imin < imax) {
 		imid = (imin + imax) / 2;
-		const char * x_string = ctx->string_table_array[imid];
+		const char *x_string = ctx->string_table_array[imid];
 		if (strcmp (x_string, string) < 0) {
 			imin = imid + 1;
 		} else {
@@ -536,15 +538,15 @@ static int gg_search_string_table(GGSerializationContext * ctx, const char * str
 		}
 	}
 
-	const char * min_string = ctx->string_table_array[imin];
+	const char *min_string = ctx->string_table_array[imin];
 	if ((imax == imin) && strcmp (min_string, string) == 0) {
 		return imin;
 	}
 	return -1;
 }
 
-static char * gg_get_tmp_string(GGSerializationContext * ctx, ut32 value) {
-	char * result = calloc (1, 32);
+static char *gg_get_tmp_string(GGSerializationContext *ctx, ut32 value) {
+	char *result = calloc (1, 32);
 
 	snprintf (result, 31, "%u", value);
 	r_list_append (ctx->tmp_strings, result);
@@ -553,7 +555,7 @@ static char * gg_get_tmp_string(GGSerializationContext * ctx, ut32 value) {
 }
 
 GGHashValue *gg_hash_new(ut32 n_pairs) {
-	GGHashValue * result = R_NEW0 (GGHashValue);
+	GGHashValue *result = R_NEW0 (GGHashValue);
 	result->type = GG_TYPE_HASH;
 	result->pairs = calloc (n_pairs, sizeof (void *));
 	result->n_pairs = n_pairs;
@@ -564,7 +566,7 @@ GGHashValue *gg_hash_new(ut32 n_pairs) {
 	return result;
 }
 
-void gg_hash_free(GGHashValue * hash) {
+void gg_hash_free(GGHashValue *hash) {
 	if (hash == NULL) {
 		return;
 	}
@@ -572,7 +574,7 @@ void gg_hash_free(GGHashValue * hash) {
 	if (hash->pairs) {
 		int i;
 		for (i = 0; i < hash->n_pairs; i++) {
-			GGHashPair * pair = hash->pairs[i];
+			GGHashPair *pair = hash->pairs[i];
 			if (!pair || !pair->value) {
 				continue;
 			}
@@ -596,7 +598,7 @@ void gg_hash_free(GGHashValue * hash) {
 	R_FREE (hash);
 }
 
-GGValue *gg_hash_value_for_key(GGHashValue * hash, const char * key) {
+GGValue *gg_hash_value_for_key(GGHashValue *hash, const char *key) {
 	if (!hash || !key) {
 		return NULL;
 	}
@@ -612,42 +614,43 @@ GGValue *gg_hash_value_for_key(GGHashValue * hash, const char * key) {
 }
 
 GGArrayValue *gg_array_new(ut32 length) {
-	if (length == 0) {
-		return NULL;
-	}
-
-	GGArrayValue * result = R_NEW0 (GGArrayValue);
+	GGArrayValue *result = R_NEW0 (GGArrayValue);
 	result->type = GG_TYPE_ARRAY;
 	result->length = length;
-	result->entries = calloc (1, length * sizeof(void *));
-	if (!result->entries) {
-		R_FREE (result);
-		result = NULL;
+
+	if (length > 0) {
+		result->entries = calloc (1, length * sizeof(void *));
+		if (!result->entries) {
+			R_FREE (result);
+			result = NULL;
+		}
 	}
 
 	return result;
 }
 
-void gg_array_free(GGArrayValue * array) {
+void gg_array_free(GGArrayValue *array) {
 	if (array == NULL) {
 		return;
 	}
 
-	int i;
-	for (i = 0; i < array->length; i++) {
-		GGValue * entry = array->entries[i];
-		if (!entry) {
-			continue;
-		}
-		switch (entry->type) {
-		case GG_TYPE_HASH:
-			gg_hash_free ((GGHashValue *) entry);
-			break;
-		case GG_TYPE_ARRAY:
-			gg_array_free ((GGArrayValue *) entry);
-			break;
-		default:
-			R_FREE (entry);
+	if (array->entries) {
+		int i;
+		for (i = 0; i < array->length; i++) {
+			GGValue *entry = array->entries[i];
+			if (!entry) {
+				continue;
+			}
+			switch (entry->type) {
+			case GG_TYPE_HASH:
+				gg_hash_free ((GGHashValue *) entry);
+				break;
+			case GG_TYPE_ARRAY:
+				gg_array_free ((GGArrayValue *) entry);
+				break;
+			default:
+				R_FREE (entry);
+			}
 		}
 	}
 
@@ -655,31 +658,31 @@ void gg_array_free(GGArrayValue * array) {
 	R_FREE (array);
 }
 
-GGIntValue *gg_int_new (ut32 value) {
-	GGIntValue * result = R_NEW0 (GGIntValue);
+GGIntValue *gg_int_new(ut32 value) {
+	GGIntValue *result = R_NEW0 (GGIntValue);
 	result->type = GG_TYPE_INT;
 	result->value = value;
 
 	return result;
 }
 
-GGStringValue *gg_string_new (const char * value) {
-	GGStringValue * result = R_NEW0 (GGStringValue);
+GGStringValue *gg_string_new(const char *value) {
+	GGStringValue *result = R_NEW0 (GGStringValue);
 	result->type = GG_TYPE_STRING;
 	result->value = value;
 
 	return result;
 }
 
-GGHashPair *gg_pair_new (const char * key, GGValue * value) {
-	GGHashPair * result = R_NEW0 (GGHashPair);
+GGHashPair *gg_pair_new(const char *key, GGValue *value) {
+	GGHashPair *result = R_NEW0 (GGHashPair);
 	result->key = key;
 	result->value = value;
 
 	return result;
 }
 
-static const char * gg_get_plo_string(GGParseContext * ctx, ut32 plo_idx) {
+static const char *gg_get_plo_string(GGParseContext *ctx, ut32 plo_idx) {
 	if (plo_idx >= ctx->plo_length) {
 		dbg_log ("plo index out of range\n");
 		return NULL;
@@ -695,7 +698,7 @@ static const char * gg_get_plo_string(GGParseContext * ctx, ut32 plo_idx) {
 }
 
 static GGValue *gg_value_carve(GGParseContext *ctx) {
-	GGValue * result = NULL;
+	GGValue *result = NULL;
 
 	if (!CTX_CUR_VALID (ctx)) {
 		dbg_log ("gg_value_carve: parse out of range\n");
@@ -714,16 +717,16 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 		ut32 plo_idx_int = CTX_CUR_UT32 (ctx);
 		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
 
-		const char * int_str = gg_get_plo_string (ctx, plo_idx_int);
+		const char *int_str = gg_get_plo_string (ctx, plo_idx_int);
 		if (!int_str) {
 			dbg_log ("gg_value_carve: could not carve int string value\n");
 			return NULL;
 		}
 
-		GGIntValue * result_int = R_NEW0 (GGIntValue);
+		GGIntValue *result_int = R_NEW0 (GGIntValue);
 		result_int->type = GG_TYPE_INT;
 		result_int->value = strtoul (int_str, NULL, 10);
-		result = (GGValue*) result_int;
+		result = (GGValue *) result_int;
 
 		break;
 	}
@@ -733,16 +736,16 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 		ut32 plo_idx_str = CTX_CUR_UT32 (ctx);
 		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
 
-		const char * str = gg_get_plo_string (ctx, plo_idx_str);
+		const char *str = gg_get_plo_string (ctx, plo_idx_str);
 		if (!str) {
 			dbg_log ("gg_value_carve: could not carve string value\n");
 			return NULL;
 		}
 
-		GGStringValue * result_str = R_NEW0 (GGStringValue);
+		GGStringValue *result_str = R_NEW0 (GGStringValue);
 		result_str->type = GG_TYPE_STRING;
 		result_str->value = str;
-		result = (GGValue*) result_str;
+		result = (GGValue *) result_str;
 
 		break;
 	}
@@ -752,15 +755,10 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 		ut32 length = CTX_CUR_UT32 (ctx);
 		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
 
-		if (length == 0) {
-			dbg_log ("gg_value_carve: zero-length array\n");
-			return NULL;
-		}
-
-		GGArrayValue * result_arr = gg_array_new (length);
+		GGArrayValue *result_arr = gg_array_new (length);
 		int i;
 		for (i = 0; i < length; i++) {
-			GGValue * entry = gg_value_carve (ctx);
+			GGValue *entry = gg_value_carve (ctx);
 			if (!entry) {
 				dbg_log ("gg_value_carve: error on array item %d\n", i);
 				goto cleanup_array;
@@ -775,7 +773,7 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 
 		CTX_CUR_ADVANCE (ctx, 1, "gg_value_carve");
 
-		result = (GGValue*) result_arr;
+		result = (GGValue *) result_arr;
 
 		break;
 
@@ -792,7 +790,7 @@ error:
 }
 
 static GGHashValue *gg_hash_carve(GGParseContext *ctx) {
-	GGHashValue * result = NULL;
+	GGHashValue *result = NULL;
 
 	if (!CTX_CUR_VALID (ctx)) {
 		dbg_log ("gg_hash_carve: parse out of range\n");
@@ -820,16 +818,16 @@ static GGHashValue *gg_hash_carve(GGParseContext *ctx) {
 		ut32 key_plo_idx = CTX_CUR_UT32 (ctx);
 		CTX_CUR_ADVANCE (ctx, 4, "gg_hash_carve");
 
-		const char * key = gg_get_plo_string (ctx, key_plo_idx);
+		const char *key = gg_get_plo_string (ctx, key_plo_idx);
 		if (!key) {
 			dbg_log ("gg_hash_carve: could not carve key\n");
 			return NULL;
 		}
 
-		GGHashPair * pair = R_NEW0 (GGHashPair);
+		GGHashPair *pair = R_NEW0 (GGHashPair);
 		pair->key = key;
 
-		GGValue * value = gg_value_carve(ctx);
+		GGValue *value = gg_value_carve (ctx);
 		if (!value) {
 			dbg_log ("gg_hash_carve: could not carve value\n");
 			R_FREE (pair);
