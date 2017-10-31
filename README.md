@@ -16,6 +16,9 @@ The above was made in this way:
 
 [![asciicast](https://asciinema.org/a/mnWkNEhqqRx6s2pEJl0xODkuu.png)](https://asciinema.org/a/mnWkNEhqqRx6s2pEJl0xODkuu)
 
+It turns out the same format used to store the ggpack index of files (GGDictionary) it's used also in all the **wimpy** files, so it's possible to use the `=!pDj` command to dump those as convenient JSONs:
+
+[![asciicast](https://asciinema.org/a/ps2pmSDLDd3EmiKvWDujPvoYr.png)](https://asciinema.org/a/ps2pmSDLDd3EmiKvWDujPvoYr)
 ## Thanks
 
 This wouldn't have been possible without the hints contained in the awesome [https://github.com/mstr-/twp-ggdump](https://github.com/mstr-/twp-ggdump) (even if it turned out that abstraction was wrong)
