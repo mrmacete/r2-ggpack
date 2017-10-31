@@ -937,7 +937,7 @@ static void r_dump_gghash_json(RIO * io, GGHashValue * hash) {
 			io->cb_printf(", ");
 		}
 	}
-	io->cb_printf ("}");
+	io->cb_printf ("}\n");
 }
 
 static void r_dump_ggarray_json(RIO * io, GGArrayValue * array) {
