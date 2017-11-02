@@ -992,7 +992,7 @@ static RGGPackIndexEntry *r_ggpack_entry_new(char *name, ut32 offset, ut32 size)
 	if (name) {
 		e->file_name = strdup (name);
 		if (strstr (name, ".bnut")) {
-			e->has_pass2 = true;
+			//e->has_pass2 = true;
 			e->has_printable_content = true;
 		}
 	}
