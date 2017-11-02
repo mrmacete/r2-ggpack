@@ -1,3 +1,5 @@
+/* MIT - Copyright 2017 - mrmacete */
+
 #ifndef R_GGLIB_H
 #define R_GGLIB_H
 

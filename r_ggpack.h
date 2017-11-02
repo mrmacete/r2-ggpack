@@ -1,34 +1,24 @@
+/* MIT - Copyright 2017 - mrmacete */
+
 #ifndef R_GGPACK
 #define R_GGPACK
-
-typedef struct {
-	ut32 name_off;
-	ut32 offset_off;
-	ut32 size_off;
-} RGGPackRawEntry;
-
-typedef struct {
-	char * string;
-	RGGPackRawEntry * raw_entry;
-	int entry_offset;
-	ut32 size;
-} RGGPackIndexString;
 
 typedef struct {
 	char *file_name;
 	ut32 offset;
 	ut32 size;
 	bool is_obfuscated;
-	RGGPackRawEntry * tmp_raw;
+	bool has_pass2;
+	bool has_printable_content;
 } RGGPackIndexEntry;
 
 typedef struct {
-	RGGPackIndexEntry ** entries;
+	RGGPackIndexEntry **entries;
 	ut32 length;
 } RGGPackIndex;
 
 typedef struct {
-	RGGPackIndex * index;
+	RGGPackIndex *index;
 	char *file_name;
 	FILE *file;
 	ut32 version;
