@@ -19,6 +19,11 @@ The above was made in this way:
 It turns out the same format used to store the ggpack index of files (GGDictionary) it's used also in all the **wimpy** files, so it's possible to use the `=!pDj` command to dump those as convenient JSONs:
 
 [![asciicast](https://asciinema.org/a/ps2pmSDLDd3EmiKvWDujPvoYr.png)](https://asciinema.org/a/ps2pmSDLDd3EmiKvWDujPvoYr)
+
+This plugin is also able to deobfuscate the **bnut** files, which are [Squirrel language](http://www.squirrel-lang.org/) source code text files containing most of the game logic, so it's possible to view, edit them and have them transparently obfuscated back so to allow game logic modding:
+
+[![asciicast](https://asciinema.org/a/6xWQc0dVEwnbiy2GfaohP62vH.png)](https://asciinema.org/a/6xWQc0dVEwnbiy2GfaohP62vH)
+
 ## Thanks
 
 This wouldn't have been possible without the hints contained in the awesome [https://github.com/mstr-/twp-ggdump](https://github.com/mstr-/twp-ggdump) (even if it turned out that abstraction was wrong)
