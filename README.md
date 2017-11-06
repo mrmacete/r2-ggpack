@@ -86,7 +86,7 @@ r2 -w ggpack:///Path/to/test-twp.ggpack1
 
 There are also a couple of r2pipe scripts:
 
-- **ggimport.py**: pass it the path to a file, it'll replace the content with the same name in the ggpack, taking into account size differences
+- **ggimport.py**: pass it the path to a file (or a directory), it'll replace the content with the same name in the ggpack, taking into account size differences. If a directory is provided, all the files directly contained into it are imported. Files whose name doesn't match any already existing file in the archive are just skipped, i.e. you can't add new files into the archive but just replace existing ones (for now).
 - **ggexport.py**: pass it the output directory name (it must exist) and it dumps all resources there
 
 Here's a quick example:
