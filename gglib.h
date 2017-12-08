@@ -3,11 +3,12 @@
 #ifndef R_GGLIB_H
 #define R_GGLIB_H
 
+#define GG_TYPE_NULL 1
+#define GG_TYPE_HASH 2
+#define GG_TYPE_ARRAY 3
 #define GG_TYPE_STRING 4
 #define GG_TYPE_INT 5
 #define GG_TYPE_DOUBLE 6
-#define GG_TYPE_HASH 2
-#define GG_TYPE_ARRAY 3
 
 typedef struct {
 	int type;

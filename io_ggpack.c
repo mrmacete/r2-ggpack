@@ -928,6 +928,9 @@ static void r_dump_gghash_json(RIO *io, GGHashValue *hash) {
 		GGHashPair *pair = hash->pairs[i];
 		io->cb_printf ("\"%s\": ", pair->key);
 		switch (pair->value->type) {
+		case GG_TYPE_NULL:
+			io->cb_printf ("null");
+			break;
 		case GG_TYPE_STRING:
 			io->cb_printf ("\"%s\"", ((GGStringValue *) pair->value)->value);
 			break;
@@ -963,11 +966,17 @@ static void r_dump_ggarray_json(RIO *io, GGArrayValue *array) {
 	for (i = 0; i < array->length; i++) {
 		GGValue *value = array->entries[i];
 		switch (value->type) {
+		case GG_TYPE_NULL:
+			io->cb_printf ("null");
+			break;
 		case GG_TYPE_STRING:
 			io->cb_printf ("\"%s\"", ((GGStringValue *) value)->value);
 			break;
 		case GG_TYPE_INT:
 			io->cb_printf ("%u", ((GGIntValue *) value)->value);
+			break;
+		case GG_TYPE_DOUBLE:
+			io->cb_printf ("%lf", ((GGDoubleValue *) value)->value);
 			break;
 		case GG_TYPE_HASH:
 			r_dump_gghash_json (io, (GGHashValue *) value);

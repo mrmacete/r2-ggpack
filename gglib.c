@@ -708,6 +708,13 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 	ut32 type = CTX_CUR_BYTE (ctx);
 
 	switch (type) {
+	case GG_TYPE_NULL:
+	{
+		CTX_CUR_ADVANCE (ctx, 1, "gg_value_carve");
+		result = R_NEW0 (GGValue);
+		result->type = GG_TYPE_NULL;
+		break;
+	}
 	case GG_TYPE_HASH:
 		result = (GGValue *) gg_hash_carve (ctx);
 		break;
