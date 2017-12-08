@@ -712,21 +712,29 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 		result = (GGValue *) gg_hash_carve (ctx);
 		break;
 	case GG_TYPE_INT:
+	case GG_TYPE_DOUBLE:
 	{
 		CTX_CUR_ADVANCE (ctx, 1, "gg_value_carve");
 		ut32 plo_idx_int = CTX_CUR_UT32 (ctx);
 		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
 
-		const char *int_str = gg_get_plo_string (ctx, plo_idx_int);
-		if (!int_str) {
-			dbg_log ("gg_value_carve: could not carve int string value\n");
+		const char *num_str = gg_get_plo_string (ctx, plo_idx_int);
+		if (!num_str) {
+			dbg_log ("gg_value_carve: could not carve number string value\n");
 			return NULL;
 		}
 
-		GGIntValue *result_int = R_NEW0 (GGIntValue);
-		result_int->type = GG_TYPE_INT;
-		result_int->value = strtoul (int_str, NULL, 10);
-		result = (GGValue *) result_int;
+		if (type == GG_TYPE_INT) {
+			GGIntValue *result_int = R_NEW0 (GGIntValue);
+			result_int->type = GG_TYPE_INT;
+			result_int->value = strtoul (num_str, NULL, 10);
+			result = (GGValue *) result_int;
+		} else {
+			GGDoubleValue *result_double = R_NEW0 (GGDoubleValue);
+			result_double->type = GG_TYPE_DOUBLE;
+			result_double->value = strtod (num_str, NULL);
+			result = (GGValue *) result_double;
+		}
 
 		break;
 	}

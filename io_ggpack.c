@@ -934,6 +934,9 @@ static void r_dump_gghash_json(RIO *io, GGHashValue *hash) {
 		case GG_TYPE_INT:
 			io->cb_printf ("%u", ((GGIntValue *) pair->value)->value);
 			break;
+		case GG_TYPE_DOUBLE:
+			io->cb_printf ("%lf", ((GGDoubleValue *) pair->value)->value);
+			break;
 		case GG_TYPE_HASH:
 			r_dump_gghash_json (io, (GGHashValue *) pair->value);
 			break;
