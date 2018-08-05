@@ -21,7 +21,7 @@
 
 extern RIOPlugin r_io_plugin_ggpack;
 
-#define BRUTE_VERSIONS 2
+#define BRUTE_VERSIONS 4
 
 /*
  * I think this changes across platforms, i have only these 2 sample points.
@@ -33,17 +33,32 @@ extern RIOPlugin r_io_plugin_ggpack;
  *
  * Once found, you can just "pc 16@hit0_0" (or whatever your hit is) and add the
  * result to this list.
+ *
+ * The above accounts for the first 16 magic bytes. The last one is a multiplier
+ * and can be found in this way:
+ *
+ * - search for references to the magic bytes
+ * - get the second reference
+ * - the instruction above is an add, looks like this
+ *          0x1000aa2c4      4881c3ad9912.  add rbx, 0x421299ad   <--added constant
+│*          0x1000aa2cb      4c8d0dce0428.  lea r9, [0x10032a7a0] <--reference
+ *
+ * - the multiplier is the last byte of the added constant
  */
 
-static const ut8 magic_bytes[BRUTE_VERSIONS][16] = {
-	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x5b, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93 },
-	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x56, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93 },
+static const ut8 magic_bytes[BRUTE_VERSIONS][17] = {
+	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x5b, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93, /* multiplier: */ 0x6d },
+	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x56, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93, /* multiplier: */ 0x6d },
+	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x5b, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93, /* multiplier: */ 0xad },
+	{ 0x4f, 0xd0, 0xa0, 0xac, 0x4a, 0x56, 0xb9, 0xe5, 0x93, 0x79, 0x45, 0xa5, 0xc1, 0xcb, 0x31, 0x93, /* multiplier: */ 0xad },
 };
 
 #define CURRENT_SIZE(rg) (					\
 		rg->index->entries[rg->index->length - 1]->offset +\
 		rg->index->entries[rg->index->length - 1]->size	\
 )
+
+#define MULTIPLIER(v) ((ut32) magic_bytes[v][16])
 
 static int __read_internal(RIOGGPack *rg, ut32 read_start, ut8 *buf, int count, st32 prev_obfuscated);
 static int __write_internal(RIOGGPack *rg, ut32 write_start, const ut8 *buf, int count, st32 prev_obfuscated);
@@ -1215,13 +1230,13 @@ static void gg_obfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 
 	for (; i < buf_size; i++) {
 		ut8 x = buffer[i] ^ previous;
-		out_buffer[i - out_offset] = x ^ magic_bytes[rg->version][(i + displace) & 0xf] ^ ((i + displace) * 0x6dL);
+		out_buffer[i - out_offset] = x ^ magic_bytes[rg->version][(i + displace) & 0xf] ^ ((i + displace) * MULTIPLIER (rg->version));
 		previous = x;
 	}
 }
 
 static ut8 gg_sample_buffer(RIOGGPack *rg, ut8 *buffer, ut32 index, ut32 displace) {
-	return buffer[index] ^ magic_bytes[rg->version][(index + displace) & 0xf] ^ ((index + displace) * 0x6dL);
+	return buffer[index] ^ magic_bytes[rg->version][(index + displace) & 0xf] ^ ((index + displace) * MULTIPLIER (rg->version));
 }
 
 static void gg_obfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
