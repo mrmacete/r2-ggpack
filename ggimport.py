@@ -20,7 +20,7 @@ def import_ggfile (input_path):
                 if diff < 0:
                     sign = ''
                 r.cmd('r%s%d@%d' % (sign, diff, f['offset']))
-                r.cmd('wf %s@%d' % (input_path, f['offset']))
+                r.cmd('wff %s@%d' % (input_path, f['offset']))
             return
 
     print 'cannot find %s in ggpack, skipping' % sym_name
