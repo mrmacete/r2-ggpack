@@ -2,6 +2,8 @@
 
 Suite of [r2](http://rada.re) plugins to read and manipulate the **ggpack** data files used by [Thimbleweed Park game](https://thimbleweedpark.com/) (if you don't know this game yet, please go and buy it because it rocks).
 
+Here's the video of the talk i gave at r2con2018 about this: https://www.youtube.com/watch?v=36u050C0gzQ
+
 ## Disclaimer
 
 This is a totally unofficial, unwanted and unrequested work, based on reverse engineering.
