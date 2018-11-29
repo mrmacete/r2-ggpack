@@ -161,7 +161,7 @@ static RIODesc *__open(RIO *io, const char *pathname, int rw, int mode) {
 	}
 
 	rg->file_name = strdup (pathname + 9);
-	rg->file = fopen (rg->file_name, (rw & R_IO_RW) == R_IO_RW? "rb+": "rb");
+	rg->file = fopen (rg->file_name, (rw & R_PERM_RW) == R_PERM_RW? "rb+": "rb");
 	if (!rg->file) {
 		goto error;
 	}

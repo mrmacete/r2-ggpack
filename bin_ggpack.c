@@ -28,8 +28,8 @@ static bool __check_bytes(const ut8 *b, ut64 length) {
 	return true;
 }
 
-static void *__load_bytes(RBinFile *arch, const ut8 *buf, ut64 sz, ut64 loadaddr, Sdb *sdb){
-	return R_NOTNULL;
+static bool __load_bytes(RBinFile *arch, void ** obj, const ut8 *buf, ut64 sz, ut64 loadaddr, Sdb *sdb){
+	return true;
 }
 
 static RBinInfo *__info(RBinFile *arch) {
