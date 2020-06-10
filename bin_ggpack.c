@@ -10,25 +10,37 @@
 
 #include "r_ggpack.h"
 
-static bool __check_bytes(const ut8 *b, ut64 length) {
-	ut32 index_offset = r_read_le32 (b);
-	if (index_offset >= length) {
+static bool __check_buffer(RBuffer *b) {
+	ut8 tmp[4];
+	if (r_buf_read_at (b, 0, tmp, 4) != 4) {
 		return false;
 	}
-	ut32 index_magic = r_read_be32 (b + index_offset);
+	ut32 index_offset = r_read_le32 (tmp);
+	if (index_offset >= r_buf_size (b)) {
+		return false;
+	}
+	if (r_buf_read_at (b, index_offset, tmp, 4) != 4) {
+		return false;
+	}
+	ut32 index_magic = r_read_be32 (tmp);
 	if (index_magic != 0x01020304) {
 		return false;
 	}
-
-	ut32 plo = r_read_le32 (b + index_offset + 8);
-	if (b[index_offset + plo] != 7) {
+	if (r_buf_read_at (b, index_offset + 8, tmp, 4) != 4) {
+		return false;
+	}
+	ut32 plo = r_read_le32 (tmp);
+	if (r_buf_read_at (b, index_offset + plo, tmp, 1) != 1) {
+		return false;
+	}
+	if (tmp[0] != 7) {
 		return false;
 	}
 
 	return true;
 }
 
-static bool __load_bytes(RBinFile *arch, void ** obj, const ut8 *buf, ut64 sz, ut64 loadaddr, Sdb *sdb){
+static bool __load_buffer(RBinFile *bf, void **bin_obj, RBuffer *buf, ut64 loadaddr, Sdb *sdb) {
 	return true;
 }
 
@@ -82,10 +94,10 @@ RBinPlugin r_bin_plugin_ggpack = {
 	.name = "ggpack",
 	.desc = "ggpack bin goodies",
 	.license = "MIT",
-	.load_bytes = &__load_bytes,
+    .load_buffer = &__load_buffer,
 	.symbols = &__symbols,
 	.strings = &__strings,
-	.check_bytes = &__check_bytes,
+	.check_buffer = &__check_buffer,
 	.info = &__info,
 };
 

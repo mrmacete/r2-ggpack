@@ -738,11 +738,12 @@ static void r_io_ggpack_rebuild_flags(RIOGGPack *rg, RIO *io) {
 		name[1023] = 0;
 		r_name_filter (name, strlen (name));
 
+		RCore *core = (RCore*) io->corebind.core;
 		snprintf (command, 1023, "f-sym.%s", name);
-		io->cb_core_cmd (io->user, command);
+		io->corebind.cmd (core, command);
 
 		snprintf (command, 1023, "f sym.%s %u@%u", name, entry->size, entry->offset);
-		io->cb_core_cmd (io->user, command);
+		io->corebind.cmd (core, command);
 	}
 }
 
