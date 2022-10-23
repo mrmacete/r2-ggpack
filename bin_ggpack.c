@@ -10,7 +10,7 @@
 
 #include "r_ggpack.h"
 
-static bool __check_buffer(RBuffer *b) {
+static bool __check_buffer(RBinFile *bf, RBuffer *b) {
 	ut8 tmp[4];
 	if (r_buf_read_at (b, 0, tmp, 4) != 4) {
 		return false;

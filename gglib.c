@@ -68,8 +68,11 @@ static GGChunk *gg_chunk_new(ut32 len);
 static void gg_chunk_free(GGChunk *chunk);
 static void gg_chunks_add_chunk(GGSerializationContext *ctx, GGChunk *chunk);
 
+static ut32 read_plo_idx(GGParseContext *ctx, const char * name);
+
 #define CTX_CUR_BYTE(ctx) (ctx->buf[ctx->buf_cursor])
 #define CTX_CUR_UT32(ctx) (r_read_le32 (ctx->buf + ctx->buf_cursor))
+#define CTX_CUR_UT16(ctx) (r_read_le16 (ctx->buf + ctx->buf_cursor))
 #define CTX_CUR_VALID(ctx) (ctx->buf_cursor < ctx->buf_size)
 #define CTX_CUR_ADVANCE(ctx, advance, fname)		\
 	ctx->buf_cursor += (advance);			\
@@ -163,8 +166,10 @@ bool gg_hash_serialize(GGHashValue *hash, ut8 **out_buf, ut32 *out_buf_size) {
 		goto error;
 	}
 
+	ut32 plo_idx_size = (r_list_length (ctx.plo) < 0x10000) ? 2 : 4;
+
 	ut32 string_table_offset = 12 + ctx.chunks_size +
-				   1 + (r_list_length (ctx.plo) + 1) * 4 + 1;
+				   1 + (r_list_length (ctx.plo) + 1) * plo_idx_size + 1;
 
 	gg_plo_add_offset (&ctx, string_table_offset);
 
@@ -370,8 +375,13 @@ static bool gg_hash_create_chunks(GGSerializationContext *ctx, GGHashValue *hash
 		if (plo_idx < 0) {
 			return false;
 		}
-		GGChunk *key_chunk = gg_chunk_new (4);
-		r_write_le32 (key_chunk->data, (ut32) plo_idx);
+		ut32 plo_idx_size = (r_list_length (ctx->plo) < 0x10000) ? 2 : 4;
+		GGChunk *key_chunk = gg_chunk_new (plo_idx_size);
+		if (plo_idx_size == 4) {
+			r_write_le32 (key_chunk->data, (ut32) plo_idx);
+		} else {
+			r_write_le16 (key_chunk->data, (ut16) plo_idx);
+		}
 		gg_chunks_add_chunk (ctx, key_chunk);
 
 		if (!gg_value_create_chunks (ctx, pair->value)) {
@@ -433,7 +443,12 @@ static bool gg_string_create_chunks(GGSerializationContext *ctx, GGStringValue *
 		return false;
 	}
 
-	r_write_le32 (str_chunk->data + 1, (ut32) plo_idx);
+	ut32 plo_idx_size = (r_list_length (ctx->plo) < 0x10000) ? 2 : 4;
+	if (plo_idx_size == 4) {
+		r_write_le32 (str_chunk->data + 1, (ut32) plo_idx);
+	} else {
+		r_write_le16 (str_chunk->data + 1, (ut16) plo_idx);
+	}
 	return true;
 }
 
@@ -449,7 +464,12 @@ static bool gg_int_create_chunks(GGSerializationContext *ctx, GGIntValue *value)
 		return false;
 	}
 
-	r_write_le32 (int_chunk->data + 1, (ut32) plo_idx);
+	ut32 plo_idx_size = (r_list_length (ctx->plo) < 0x10000) ? 2 : 4;
+	if (plo_idx_size == 4) {
+		r_write_le32 (int_chunk->data + 1, (ut32) plo_idx);
+	} else {
+		r_write_le16 (int_chunk->data + 1, (ut16) plo_idx);
+	}
 	return true;
 }
 
@@ -684,7 +704,7 @@ GGHashPair *gg_pair_new(const char *key, GGValue *value) {
 
 static const char *gg_get_plo_string(GGParseContext *ctx, ut32 plo_idx) {
 	if (plo_idx >= ctx->plo_length) {
-		dbg_log ("plo index out of range\n");
+		dbg_log ("plo index out of range 0x%x\n", plo_idx);
 		return NULL;
 	}
 
@@ -722,8 +742,7 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 	case GG_TYPE_DOUBLE:
 	{
 		CTX_CUR_ADVANCE (ctx, 1, "gg_value_carve");
-		ut32 plo_idx_int = CTX_CUR_UT32 (ctx);
-		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
+		ut32 plo_idx_int = read_plo_idx (ctx, "gg_value_carve");
 
 		const char *num_str = gg_get_plo_string (ctx, plo_idx_int);
 		if (!num_str) {
@@ -748,8 +767,7 @@ static GGValue *gg_value_carve(GGParseContext *ctx) {
 	case GG_TYPE_STRING:
 	{
 		CTX_CUR_ADVANCE (ctx, 1, "gg_value_carve");
-		ut32 plo_idx_str = CTX_CUR_UT32 (ctx);
-		CTX_CUR_ADVANCE (ctx, 4, "gg_value_carve");
+		ut32 plo_idx_str = read_plo_idx (ctx, "gg_value_carve");
 
 		const char *str = gg_get_plo_string (ctx, plo_idx_str);
 		if (!str) {
@@ -830,12 +848,11 @@ static GGHashValue *gg_hash_carve(GGParseContext *ctx) {
 
 	int i;
 	for (i = 0; i < n_pairs; i++) {
-		ut32 key_plo_idx = CTX_CUR_UT32 (ctx);
-		CTX_CUR_ADVANCE (ctx, 4, "gg_hash_carve");
+		ut32 key_plo_idx = read_plo_idx (ctx, "gg_hash_carve");
 
 		const char *key = gg_get_plo_string (ctx, key_plo_idx);
 		if (!key) {
-			dbg_log ("gg_hash_carve: could not carve key\n");
+			dbg_log ("gg_hash_carve: could not carve key at offset 0x%x\n", ctx->buf_cursor);
 			return NULL;
 		}
 
@@ -868,4 +885,18 @@ error:
 	}
 
 	return NULL;
+}
+
+static ut32 read_plo_idx(GGParseContext *ctx, const char * name) {
+	ut32 result;
+	if (ctx->plo_length < 0x10000) {
+		result = CTX_CUR_UT16 (ctx);
+		CTX_CUR_ADVANCE (ctx, 2, name);
+	} else {
+		result = CTX_CUR_UT32 (ctx);
+		CTX_CUR_ADVANCE (ctx, 4, name);
+	}
+	return result;
+error:
+	return -1;
 }

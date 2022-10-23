@@ -10,6 +10,7 @@
 #include "r_ggpack.h"
 #include "gglib.h"
 #include "r_ggpack_pass2.h"
+#include "rtmi.h"
 
 #define ENABLE_DEBUG 0
 
@@ -83,19 +84,26 @@ static int r_ggpack_index_search(RGGPackIndex *index, ut32 offset);
 
 static void gg_deobfuscate(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2);
+static void gg_deobfuscate_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2);
+static void gg_deobfuscate_rtmi(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2);
+
 static void gg_obfuscate(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2);
+static void gg_obfuscate_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2);
 
-static void gg_deobfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+static void gg_deobfuscate_pass2_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 				 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool skip_first);
-static void gg_deobfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
+static void gg_deobfuscate_pass1_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 				 ut32 key_offset, ut32 key_size, ut32 buf_offset, ut32 buf_size);
-static void gg_obfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
+static void gg_obfuscate_pass1_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 			       ut32 key_offset, ut32 key_size, ut32 buf_offset, ut32 buf_size);
-static void gg_obfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+static void gg_obfuscate_pass2_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			       ut32 key_size, ut32 buf_offset, ut32 buf_size);
 
-static ut8 gg_sample_buffer(RIOGGPack *rg, ut8 *buffer, ut32 index, ut32 displace);
+static ut8 gg_sample_buffer_twp(RIOGGPack *rg, ut8 *buffer, ut32 index, ut32 displace);
 
 static void r_io_ggpack_dump_index(RIO *io, RIOGGPack *rg);
 static void r_io_ggpack_dump_dictionary_at_offset(RIO *io, RIOGGPack *rg);
@@ -119,6 +127,7 @@ static RIOGGPack *r_io_ggpack_new(void) {
 	rg->index = NULL;
 	rg->file_name = NULL;
 	rg->file = NULL;
+	rg->type = R_GGPACK_TYPE_TWP;
 	rg->version = 0;
 	rg->wait_for_shift_and_rebuild_index = false;
 	rg->shifting_index = false;
@@ -171,7 +180,7 @@ static RIODesc *__open(RIO *io, const char *pathname, int rw, int mode) {
 	}
 
 	RIODesc *desc = r_io_desc_new (io, &r_io_plugin_ggpack, pathname, rw, mode, rg);
-	desc->obsz = 1024 * 16;
+	//desc->obsz = 1024 * 16;
 
 	return desc;
 
@@ -181,11 +190,11 @@ error:
 	return NULL;
 }
 
-static int __close(RIODesc *fd) {
+static bool __close(RIODesc *fd) {
 	RIOGGPack *rg;
 
 	if (!fd || !fd->data) {
-		return -1;
+		return false;
 	}
 
 	rg = fd->data;
@@ -193,7 +202,7 @@ static int __close(RIODesc *fd) {
 	r_io_ggpack_free (fd->data);
 	fd->data = NULL;
 
-	return 0;
+	return true;
 }
 
 static int __read(RIO *io, RIODesc *fd, ut8 *buf, int count) {
@@ -282,6 +291,11 @@ static bool __resize(RIO *io, RIODesc *fd, ut64 count) {
 		return false;
 	}
 	rg = fd->data;
+
+	if (rg->type == R_GGPACK_TYPE_RTMI) {
+		eprintf ("Resize not supported (yet) for RTMI\n");
+		return false;
+	}
 
 	if (count > 0xffffffff) {
 		dbg_log ("can't resize that much\n");
@@ -489,35 +503,44 @@ static int r_io_ggpack_read_entry(RIOGGPack *rg, ut32 read_start, ut8 *buf, int 
 	ut32 start_gap = (entry_start > read_start)? entry_start - read_start: 0;
 	ut32 real_count = R_MIN (entry_end, read_end) - R_MAX (entry_start, read_start);
 
-	if (entry->is_obfuscated) {
-		if (read_start > entry_start) {
-			ut8 *dbuf = malloc (real_count + 1);
-			if (!dbuf) {
-				return 0;
-			}
+	if (rg->type == R_GGPACK_TYPE_TWP) {
+		if (entry->is_obfuscated) {
+			if (read_start > entry_start) {
+				ut8 *dbuf = malloc (real_count + 1);
+				if (!dbuf) {
+					return 0;
+				}
 
-			if (!prev_obfuscated || *prev_obfuscated == -1) {
-				fseek (rg->file, read_start - 1 + start_gap, SEEK_SET);
-				fread (dbuf, 1, real_count + 1, rg->file);
+				if (!prev_obfuscated || *prev_obfuscated == -1) {
+					fseek (rg->file, read_start - 1 + start_gap, SEEK_SET);
+					fread (dbuf, 1, real_count + 1, rg->file);
+				} else {
+					fseek (rg->file, read_start - 1 + start_gap, SEEK_SET);
+					st32 x = 0;
+					fread (&x, 1, 1, rg->file);
+					fseek (rg->file, read_start + start_gap, SEEK_SET);
+					fread (dbuf + 1, 1, real_count, rg->file);
+					dbuf[0] = *prev_obfuscated & 0xff;
+				}
+				gg_deobfuscate (rg, buf + start_gap, dbuf, entry_start, entry->size, read_start + start_gap, real_count + 1, entry->has_pass2);
+				R_FREE (dbuf);
 			} else {
-				fseek (rg->file, read_start - 1 + start_gap, SEEK_SET);
-				st32 x = 0;
-				fread (&x, 1, 1, rg->file);
 				fseek (rg->file, read_start + start_gap, SEEK_SET);
-				fread (dbuf + 1, 1, real_count, rg->file);
-				dbuf[0] = *prev_obfuscated & 0xff;
+				fread (buf + start_gap, 1, real_count, rg->file);
+				gg_deobfuscate (rg, NULL, buf + start_gap, entry_start, entry->size, read_start + start_gap, real_count, entry->has_pass2);
 			}
-			gg_deobfuscate (rg, buf + start_gap, dbuf, entry_start, entry->size, read_start + start_gap, real_count + 1, entry->has_pass2);
-			R_FREE (dbuf);
 		} else {
 			fseek (rg->file, read_start + start_gap, SEEK_SET);
 			fread (buf + start_gap, 1, real_count, rg->file);
-			gg_deobfuscate (rg, NULL, buf + start_gap, entry_start, entry->size, read_start + start_gap, real_count, entry->has_pass2);
 		}
 	} else {
 		fseek (rg->file, read_start + start_gap, SEEK_SET);
 		fread (buf + start_gap, 1, real_count, rg->file);
+		if (entry->is_obfuscated) {
+			gg_deobfuscate (rg, NULL, buf + start_gap, entry_start, entry->size, read_start, real_count, entry->has_pass2);
+		}
 	}
+
 
 	if (prev_obfuscated) {
 		*prev_obfuscated = -1;
@@ -546,45 +569,63 @@ static int r_io_ggpack_write_entry(RIOGGPack *rg, ut32 write_start, const ut8 *b
 	}
 
 	ut8 *dbuf = NULL, *wbuf;;
-	if (entry->is_obfuscated) {
-		if (write_start > entry_start) {
-			dbuf = malloc (real_count + 1 + rest_size);
-			if (!dbuf) {
-				return 0;
-			}
 
-			wbuf = dbuf + 1;
+	if (rg->type == R_GGPACK_TYPE_TWP) {
+		if (entry->is_obfuscated) {
+			if (write_start > entry_start) {
+				dbuf = malloc (real_count + 1 + rest_size);
+				if (!dbuf) {
+					return 0;
+				}
 
-			if (!prev_obfuscated || *prev_obfuscated == -1) {
-				fseek (rg->file, write_start + start_gap - 1, SEEK_SET);
-				fread (dbuf, 1, 1, rg->file);
+				wbuf = dbuf + 1;
+
+				if (!prev_obfuscated || *prev_obfuscated == -1) {
+					fseek (rg->file, write_start + start_gap - 1, SEEK_SET);
+					fread (dbuf, 1, 1, rg->file);
+				} else {
+					dbuf[0] = *prev_obfuscated & 0xff;
+				}
+
+				memcpy (wbuf, buf + start_gap, real_count);
+
+				if (rest_size > 0) {
+					__read_internal (rg, write_end, wbuf + real_count, rest_size, -1);
+				}
+
+				gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start + start_gap, real_count + 1 + rest_size, entry->has_pass2);
 			} else {
-				dbuf[0] = *prev_obfuscated & 0xff;
+				wbuf = dbuf = malloc (real_count + rest_size);
+				if (!dbuf) {
+					return 0;
+				}
+
+				memcpy (dbuf, buf + start_gap, real_count);
+
+				if (rest_size > 0) {
+					__read_internal (rg, write_end, wbuf + real_count, rest_size, -1);
+				}
+
+				gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start + start_gap, real_count + rest_size, entry->has_pass2);
 			}
-
-			memcpy (wbuf, buf + start_gap, real_count);
-
-			if (rest_size > 0) {
-				__read_internal (rg, write_end, wbuf + real_count, rest_size, -1);
-			}
-
-			gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start + start_gap, real_count + 1 + rest_size, entry->has_pass2);
 		} else {
+			wbuf = (ut8 *) buf + start_gap;
+		}
+	} else {
+		if (entry->is_obfuscated) {
 			wbuf = dbuf = malloc (real_count + rest_size);
 			if (!dbuf) {
 				return 0;
 			}
-
 			memcpy (dbuf, buf + start_gap, real_count);
-
 			if (rest_size > 0) {
 				__read_internal (rg, write_end, wbuf + real_count, rest_size, -1);
 			}
-
-			gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start + start_gap, real_count + rest_size, entry->has_pass2);
+			gg_obfuscate (rg, NULL, dbuf, entry_start, entry->size, write_start, real_count + rest_size, entry->has_pass2);
+			write_start -= start_gap;
+		} else {
+			wbuf = (ut8 *) buf + start_gap;
 		}
-	} else {
-		wbuf = (ut8 *) buf + start_gap;
 	}
 
 	if (prev_obfuscated) {
@@ -738,12 +779,12 @@ static void r_io_ggpack_rebuild_flags(RIOGGPack *rg, RIO *io) {
 		name[1023] = 0;
 		r_name_filter (name, strlen (name));
 
-		RCore *core = (RCore*) io->corebind.core;
+		RCore *core = (RCore*) io->coreb.core;
 		snprintf (command, 1023, "f-sym.%s", name);
-		io->corebind.cmd (core, command);
+		io->coreb.cmd (core, command);
 
 		snprintf (command, 1023, "f sym.%s %u@%u", name, entry->size, entry->offset);
-		io->corebind.cmd (core, command);
+		io->coreb.cmd (core, command);
 	}
 }
 
@@ -863,9 +904,15 @@ nice_error:
 		gg_hash_free (index_dir);
 		index_dir = NULL;
 	}
-	if (rg->version < BRUTE_VERSIONS - 1) {
+	if ((rg->type == R_GGPACK_TYPE_TWP && rg->version < BRUTE_VERSIONS - 1) ||
+			(rg->type == R_GGPACK_TYPE_RTMI && rg->version < BRUTE_RTMI_VERSIONS - 1)) {
 		rg->version++;
-		dbg_log ("retry with version %d\n", rg->version);
+		dbg_log ("retry with type %d version %d\n", rg->type, rg->version);
+		goto read_direcory;
+	} else if (rg->type < R_GGPACK_TYPE_MAX) {
+		rg->version = 0;
+		rg->type++;
+		dbg_log ("retry with type %d version %d\n", rg->type, rg->version);
 		goto read_direcory;
 	}
 
@@ -1017,16 +1064,19 @@ static RGGPackIndexEntry *r_ggpack_entry_new(char *name, ut32 offset, ut32 size)
 		return NULL;
 	}
 
+	e->is_obfuscated = true;
 	if (name) {
 		e->file_name = strdup (name);
 		if (strstr (name, ".bnut")) {
 			e->has_pass2 = true;
 			e->has_printable_content = true;
 		}
+		if (strstr (name, ".bank")) {
+			e->is_obfuscated = false;
+		}
 	}
 	e->offset = offset;
 	e->size = size;
-	e->is_obfuscated = true;
 
 	return e;
 }
@@ -1128,7 +1178,40 @@ static int r_ggpack_index_search(RGGPackIndex *index, ut32 offset) {
 
 static void gg_deobfuscate(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2) {
-	gg_deobfuscate_pass1 (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
+	if (rg->type == R_GGPACK_TYPE_TWP)
+		gg_deobfuscate_twp (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size, has_pass2);
+	else if (rg->type == R_GGPACK_TYPE_RTMI)
+		gg_deobfuscate_rtmi (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size, has_pass2);
+	else
+		dbg_log ("unsupported ggpack type\n");
+}
+
+static void gg_deobfuscate_rtmi(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2) {
+	st64 displace = (st64) buf_offset - (st64) key_offset;
+	if (!out_buffer) {
+		out_buffer = buffer;
+	}
+	ut32 previous = (key_size + 0x78) & 0xffff;
+
+	ut32 i;
+	if (displace > 0) {
+		for (i = 0; i < displace /* - 1 */; i++) {
+			previous += rtmi_magic_bytes_short[rg->version][previous & 0xff];
+		}
+	}
+	for (i = 0; i < buf_size; i++) {
+		out_buffer[i] =
+			buffer[i] ^
+			rtmi_magic_bytes_long[rg->version][previous & 0xffff] ^
+			rtmi_magic_bytes_short[rg->version][(previous + 0x78) & 0xff];
+		previous += rtmi_magic_bytes_short[rg->version][previous & 0xff];
+	}
+}
+
+static void gg_deobfuscate_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			   ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2) {
+	gg_deobfuscate_pass1_twp (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
 
 	if (has_pass2) {
 		ut8 *middle_buffer = out_buffer;
@@ -1140,11 +1223,11 @@ static void gg_deobfuscate(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key
 			buf_size --;
 		}
 
-		gg_deobfuscate_pass2 (rg, NULL, middle_buffer, key_offset, key_size, buf_offset, buf_size, skip_first);
+		gg_deobfuscate_pass2_twp (rg, NULL, middle_buffer, key_offset, key_size, buf_offset, buf_size, skip_first);
 	}
 }
 
-static void gg_deobfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
+static void gg_deobfuscate_pass1_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 				 ut32 key_offset, ut32 key_size, ut32 buf_offset, ut32 buf_size) {
 	ut8 previous = key_size & 0xff;
 	ut32 i = 0;
@@ -1155,7 +1238,7 @@ static void gg_deobfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 	}
 
 	if (displace) {
-		previous = gg_sample_buffer (rg, buffer, i++, displace - 1);
+		previous = gg_sample_buffer_twp (rg, buffer, i++, displace - 1);
 		displace--;
 		if (out_buffer != buffer) {
 			out_offset = 1;
@@ -1163,13 +1246,13 @@ static void gg_deobfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 	}
 
 	for (; i < buf_size; i++) {
-		ut8 x = gg_sample_buffer (rg, buffer, i, displace);
+		ut8 x = gg_sample_buffer_twp (rg, buffer, i, displace);
 		out_buffer[i - out_offset] = x ^ previous;
 		previous = x;
 	}
 }
 
-static void gg_deobfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+static void gg_deobfuscate_pass2_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 				 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool skip_first) {
 	int cursor = key_size & 0xff;
 	ut32 displace = buf_offset - key_offset;
@@ -1197,21 +1280,31 @@ static void gg_deobfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut
 
 static void gg_obfuscate(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2) {
+	if (rg->type == R_GGPACK_TYPE_TWP)
+		gg_obfuscate_twp (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size, has_pass2);
+	else if (rg->type == R_GGPACK_TYPE_RTMI)
+		gg_deobfuscate_rtmi (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size, has_pass2);
+	else
+		dbg_log ("unsupported ggpack type\n");
+}
+
+static void gg_obfuscate_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+			 ut32 key_size, ut32 buf_offset, ut32 buf_size, bool has_pass2) {
 	if (has_pass2) {
-		gg_obfuscate_pass2 (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
+		gg_obfuscate_pass2_twp (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
 
 		ut8 *middle_buffer = out_buffer;
 		if (!middle_buffer) {
 			middle_buffer = buffer;
 		}
 
-		gg_obfuscate_pass1 (rg, NULL, middle_buffer, key_offset, key_size, buf_offset, buf_size);
+		gg_obfuscate_pass1_twp (rg, NULL, middle_buffer, key_offset, key_size, buf_offset, buf_size);
 	} else {
-		gg_obfuscate_pass1 (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
+		gg_obfuscate_pass1_twp (rg, out_buffer, buffer, key_offset, key_size, buf_offset, buf_size);
 	}
 }
 
-static void gg_obfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
+static void gg_obfuscate_pass1_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 			       ut32 key_offset, ut32 key_size, ut32 buf_offset, ut32 buf_size) {
 	ut8 previous = key_size & 0xff;
 	ut32 i = 0;
@@ -1222,7 +1315,7 @@ static void gg_obfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 	}
 
 	if (displace) {
-		previous = gg_sample_buffer (rg, buffer, i++, displace - 1);
+		previous = gg_sample_buffer_twp (rg, buffer, i++, displace - 1);
 		displace--;
 		if (out_buffer != buffer) {
 			out_offset = 1;
@@ -1236,11 +1329,11 @@ static void gg_obfuscate_pass1(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer,
 	}
 }
 
-static ut8 gg_sample_buffer(RIOGGPack *rg, ut8 *buffer, ut32 index, ut32 displace) {
+static ut8 gg_sample_buffer_twp(RIOGGPack *rg, ut8 *buffer, ut32 index, ut32 displace) {
 	return buffer[index] ^ magic_bytes[rg->version][(index + displace) & 0xf] ^ ((index + displace) * MULTIPLIER (rg->version));
 }
 
-static void gg_obfuscate_pass2(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
+static void gg_obfuscate_pass2_twp(RIOGGPack *rg, ut8 *out_buffer, ut8 *buffer, ut32 key_offset,
 			       ut32 key_size, ut32 buf_offset, ut32 buf_size) {
 	int cursor = key_size & 0xff;
 	ut32 displace = buf_offset - key_offset;
@@ -1279,7 +1372,7 @@ RIOPlugin r_io_plugin_ggpack = {
 	.close = __close,
 	.read = __read,
 	.check = __check,
-	.lseek = __lseek,
+	.seek = __lseek,
 	.write = __write,
 	.resize = __resize,
 	.system = __system,

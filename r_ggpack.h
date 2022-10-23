@@ -1,7 +1,12 @@
-/* MIT - Copyright 2017 - mrmacete */
+/* MIT - Copyright 2017-2022 - mrmacete */
 
 #ifndef R_GGPACK
 #define R_GGPACK
+
+#define R_GGPACK_TYPE_TWP 0
+#define R_GGPACK_TYPE_RTMI 1
+
+#define R_GGPACK_TYPE_MAX 1
 
 typedef struct {
 	char *file_name;
@@ -27,6 +32,7 @@ typedef struct {
 	ut32 offset;
 	bool wait_for_shift_and_rebuild_index;
 	bool shifting_index;
+    int type;
 } RIOGGPack;
 
 #endif
